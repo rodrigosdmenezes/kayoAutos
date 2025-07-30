@@ -7,18 +7,19 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 import time
+import sys # Necessário para o PyInstaller na Opção B de Driver
 
-driver = webdriver.Firefox()
+driver = webdriver.Chrome()
 driver.maximize_window() 
 driver.get("https://vendadireta.dealersclub.com.br/login")
-wait = WebDriverWait(driver, 10)
+wait = WebDriverWait(driver, 10) # Wait geral
 
 veiculos = []
 
 def login():
-    time.sleep(5)
-    driver.find_element(By.CSS_SELECTOR, 'input[aria-label="e-mail"]').send_keys('xxxxxxxxxxxxx')
-    driver.find_element(By.CSS_SELECTOR, 'input[aria-label="senha"]').send_keys('xxxxxxxxxxxxx')
+    time.sleep(20)
+    driver.find_element(By.CSS_SELECTOR, 'input[aria-label="e-mail"]').send_keys('rafaelctba@sorepasse.com.br')
+    driver.find_element(By.CSS_SELECTOR, 'input[aria-label="senha"]').send_keys('Paloma01**')
     driver.find_element(By.XPATH, '//*[@id="q-app"]/div[1]/div/div/div[2]/div/div/div/div/div[1]/div/form/div[1]/div[2]/button').click()
 
 def ofertas():
@@ -78,9 +79,26 @@ def salvar_info_veiculo_excel(pasta=None, dados_veiculo=None, nome_arquivo='info
             # Adiciona 'Status' ao início se ele existir e ainda não estiver lá
             if 'Status' in cols:
                 cols.remove('Status')
-                cols = cols[:2] + ['Status'] + cols[2:] # Mantém Página e Card primeiro, depois Status
+                # Encontra o índice da última coluna fixada (Card) para inserir depois dela
+                idx_insert = cols.index('Card') + 1 
+                cols.insert(idx_insert, 'Status')
+
+            # Adiciona 'Oferta Atual' e 'Valor FIPE' após 'Status'
+            # Garante que as colunas existam e insere na ordem desejada
+            ordered_cols = ['Página', 'Card']
+            if 'Status' in df.columns:
+                ordered_cols.append('Status')
+            if 'Oferta Atual' in df.columns:
+                ordered_cols.append('Oferta Atual')
+            if 'Valor FIPE' in df.columns:
+                ordered_cols.append('Valor FIPE')
             
-            df = df[cols]
+            # Adiciona as outras colunas que não são as fixas/ordenadas
+            for col in cols:
+                if col not in ordered_cols:
+                    ordered_cols.append(col)
+            
+            df = df[ordered_cols]
             
             caminho_arquivo_geral = "todos_veiculos.xlsx" # Nome do arquivo para todos os veículos
             try:
@@ -167,6 +185,30 @@ def extrair_detalhes_na_nova_aba(card_index=None, page_num=None):
 
         except Exception as e:
             print(f"⚠️ Erro ao extrair característica de div pai: {e}")
+
+    # --- NOVO: Extrair Oferta Atual (com WebDriverWait) ---
+    oferta_atual_valor = "Não Disponível"
+    try:
+        # Espera o elemento que contém o preço estar visível
+        preco_element = wait.until(EC.visibility_of_element_located((By.CSS_SELECTOR, "div.oferta-atual")))
+        oferta_atual_valor = preco_element.text.strip()
+        print(f"💲 Oferta Atual encontrada: {oferta_atual_valor}")
+    except Exception as e:
+        print(f"⚠️ Não foi possível extrair a Oferta Atual: {e}")
+    caracteristicas["Oferta Atual"] = oferta_atual_valor
+
+
+    # --- NOVO: Extrair Valor FIPE (com WebDriverWait) ---
+    valor_fipe = "Não Disponível"
+    try:
+        # Espera o h6 que contém o valor da FIPE estar visível
+        # Seleciona o h6 que é descendente de uma div com as classes específicas
+        fipe_value_element = wait.until(EC.visibility_of_element_located((By.CSS_SELECTOR, 'div.col-md.col-xs-12 h6')))
+        valor_fipe = fipe_value_element.text.strip()
+        print(f"💲 Valor FIPE encontrado: {valor_fipe}")
+    except Exception as e:
+        print(f"⚠️ Não foi possível extrair o Valor FIPE: {e}")
+    caracteristicas["Valor FIPE"] = valor_fipe
     
     # Monta dicionário para salvar no Excel
     veiculo_info = {
@@ -211,10 +253,9 @@ def extrair_detalhes_na_nova_aba(card_index=None, page_num=None):
     except Exception as e:
         print(f"❌ Não foi possível encontrar o carrossel principal ou extrair imagens: {e}")
 
-    # --- NOVO: Baixar arquivo PDF, se disponível ---
+    # --- Baixar arquivo PDF, se disponível ---
     try:
         pdf_link_element = None
-        
         try:
             pdf_link_element = driver.find_element(By.CSS_SELECTOR, 'a[href*=".pdf"]')
         except:
@@ -223,7 +264,7 @@ def extrair_detalhes_na_nova_aba(card_index=None, page_num=None):
         if pdf_link_element:
             pdf_url = pdf_link_element.get_attribute('href')
             if pdf_url:
-                pdf_nome_arquivo = f'{titulo_veiculo}_documento.pdf' # Nomeia o PDF com o título do veículo
+                pdf_nome_arquivo = f'{titulo_veiculo}_documento.pdf' 
                 caminho_pdf = os.path.join(pasta, pdf_nome_arquivo)
 
                 print(f"⬇️ Baixando PDF: {pdf_url}")
@@ -232,19 +273,19 @@ def extrair_detalhes_na_nova_aba(card_index=None, page_num=None):
                     with open(caminho_pdf, 'wb') as f:
                         f.write(resposta_pdf.content)
                     print(f"✔️ PDF salvo: {caminho_pdf}")
-                    veiculo_info["PDF_Anexado"] = pdf_nome_arquivo # Adiciona ao Excel
+                    veiculo_info["PDF_Anexado"] = pdf_nome_arquivo
                 else:
                     print(f"⚠️ Falha ao baixar PDF: {pdf_url} - Status {resposta_pdf.status_code}")
-                    veiculo_info["PDF_Anexado"] = "Erro de Download" # Adiciona ao Excel
+                    veiculo_info["PDF_Anexado"] = "Erro de Download"
             else:
-                veiculo_info["PDF_Anexado"] = "Link PDF Vazio" # Adiciona ao Excel
+                veiculo_info["PDF_Anexado"] = "Link PDF Vazio"
         else:
             print("ℹ️ Nenhum link de PDF encontrado nesta página.")
-            veiculo_info["PDF_Anexado"] = "Não Disponível" # Adiciona ao Excel
+            veiculo_info["PDF_Anexado"] = "Não Disponível"
 
     except Exception as e:
         print(f"❌ Erro ao tentar baixar PDF: {e}")
-        veiculo_info["PDF_Anexado"] = f"Erro: {str(e)}" # Adiciona o erro ao Excel para debug
+        veiculo_info["PDF_Anexado"] = f"Erro: {str(e)}"
 
     # Salvar Excel na pasta do veículo com todos os dados
     salvar_info_veiculo_excel(pasta, veiculo_info)
