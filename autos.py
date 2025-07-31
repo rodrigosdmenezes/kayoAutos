@@ -10,15 +10,15 @@ import time
 
 driver = webdriver.Chrome()
 driver.maximize_window()
-driver.get("https://vendadireta.dealersclub.com.br/login")
-wait = WebDriverWait(driver, 10)
+driver.get("xxxxxxxxxxxx")
+wait = WebDriverWait(driver, 20)
 
 veiculos = []
 
 def login():
-    time.sleep(7)
-    driver.find_element(By.CSS_SELECTOR, 'input[aria-label="e-mail"]').send_keys('xxxxxxxxxxxxx')
-    driver.find_element(By.CSS_SELECTOR, 'input[aria-label="senha"]').send_keys('xxxxxxxxxxxxxx')
+    time.sleep(10)
+    driver.find_element(By.CSS_SELECTOR, 'input[aria-label="e-mail"]').send_keys('xxxxxxxxxx')
+    driver.find_element(By.CSS_SELECTOR, 'input[aria-label="senha"]').send_keys('xxxxxxxxxxxx')
     driver.find_element(By.XPATH, '//*[@id="q-app"]/div[1]/div/div/div[2]/div/div/div/div/div[1]/div/form/div[1]/div[2]/button').click()
 
 def ofertas():
@@ -63,41 +63,8 @@ def ofertas():
         except Exception as e:
             print(f"⚠️ Erro ao clicar no filtro {i}: {e}")
 
-def salvar_info_veiculo_excel(pasta=None, dados_veiculo=None, nome_arquivo='info_veiculo.xlsx'):
-    # Se pasta e dados_veiculo forem None, significa que é a chamada final para salvar todos os dados.
-    if pasta is None and dados_veiculo is None:
-        if veiculos:
-            df = pd.DataFrame(veiculos)
-            # Define a ordem desejada das colunas no início
-            ordered_cols = ['Página', 'Card']
-            if 'Status' in df.columns:
-                ordered_cols.append('Status')
-            if 'Oferta Atual' in df.columns: # Esta será o valor-destaque da listagem
-                ordered_cols.append('Oferta Atual')
-            if 'Oferta Detalhada' in df.columns: # Nova coluna para a oferta da página de detalhes
-                ordered_cols.append('Oferta Detalhada')
-            if 'Valor FIPE' in df.columns:
-                ordered_cols.append('Valor FIPE')
-
-            # Adiciona as outras colunas que não são as fixas/ordenadas
-            current_cols = df.columns.tolist()
-            for col in current_cols:
-                if col not in ordered_cols: # Garante que não duplica
-                    ordered_cols.append(col)
-
-            df = df[ordered_cols]
-
-            caminho_arquivo_geral = "todos_veiculos.xlsx" # Nome do arquivo para todos os veículos
-            try:
-                df.to_excel(caminho_arquivo_geral, index=False)
-                print(f"\n✔️ Todas as informações dos veículos salvas em: {caminho_arquivo_geral}")
-            except Exception as e:
-                print(f"\n❌ Erro ao salvar o Excel geral: {e}")
-        else:
-            print("\nℹ️ Nenhuma informação de veículo para salvar no Excel geral.")
-        return
-
-    # Comportamento original para salvar por veículo
+def salvar_info_veiculo_excel(pasta, dados_veiculo, nome_arquivo='info_veiculo.xlsx'):
+    # Comportamento para salvar por veículo
     try:
         df = pd.DataFrame([dados_veiculo])  # lista com 1 dicionário
         caminho_arquivo = os.path.join(pasta, nome_arquivo)
@@ -106,23 +73,46 @@ def salvar_info_veiculo_excel(pasta=None, dados_veiculo=None, nome_arquivo='info
     except Exception as e:
         print(f"❌ Erro ao salvar Excel do veículo: {e}")
 
-# Adicionei o parametro 'oferta_card_principal'
 def extrair_detalhes_na_nova_aba(card_index=None, page_num=None, oferta_card_principal="N/A"):
+    current_url = driver.current_url
+    print(f"🔗 URL da página de detalhes: {current_url}")
+
     wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "div.descricao-veiculo")))
 
     descricao_element = driver.find_element(By.CSS_SELECTOR, "div.descricao-veiculo")
     descricao_texto = descricao_element.text.strip()
 
     titulo_veiculo_element = driver.find_element(By.CSS_SELECTOR, "p.titulo-veiculo")
-    titulo_veiculo = titulo_veiculo_element.text.strip().replace('\n', ' ').replace('  ', ' ')
+    titulo_veiculo = titulo_veiculo_element.text.strip().replace('\n', ' ').replace('  ', ' ')
     titulo_veiculo = re.sub(r'[\\/:"*?<>|]+', '', titulo_veiculo)
 
     pasta = os.path.join("imagens_veiculos", titulo_veiculo)
     os.makedirs(pasta, exist_ok=True)
 
-    # --- Extrair características do veículo ---
     caracteristicas = {}
+    
+    # --- NOVO: Extrair localização ---
+    empresa_localizacao = "N/A"
+    endereco_completo = "N/A"
+    try:
+        localizacao_div = wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, 'div.localizacao')))
+        try:
+            empresa_element = localizacao_div.find_element(By.CSS_SELECTOR, 'div[class="localizacao q-mb-md relative-position"] div[class="empresa"] p.nome')
+            empresa_localizacao = empresa_element.text.strip()
+        except:
+            print("⚠️ Empresa de localização não encontrada.")
+            
+        try:
+            endereco_element = localizacao_div.find_element(By.CSS_SELECTOR, 'div[class="localizacao q-mb-md relative-position"] div[class="endereco"] p')
+            endereco_completo = endereco_element.text.strip()
+        except:
+            print("⚠️ Endereço completo não encontrado.")
+            
+        print(f"📍 Localização encontrada: Empresa='{empresa_localizacao}', Endereço='{endereco_completo}'")
+    except Exception as e:
+        print(f"❌ Erro ao extrair localização do veículo: {e}")
 
+    # --- Extrair outras características ---
     caracteristicas_divs_pai = driver.find_elements(By.CSS_SELECTOR,
         "div.col-xs-4.col-md-3.col-sm-4.q-mb-md, div.col-xs-6.col-md-3.col-sm-6.aprovado, div.col-xs-6.col-md-3.col-sm-6.reprovado"
     )
@@ -142,7 +132,6 @@ def extrair_detalhes_na_nova_aba(card_index=None, page_num=None, oferta_card_pri
             else:
                 titulo_element = div_carac_pai.find_element(By.CSS_SELECTOR, "p.veiculo-caracteristica-titulo")
                 titulo = titulo_element.text.strip()
-
                 valor_element = None
                 try:
                     valor_element = div_carac_pai.find_element(By.CSS_SELECTOR, "p.veiculo-caracteristica")
@@ -157,7 +146,6 @@ def extrair_detalhes_na_nova_aba(card_index=None, page_num=None, oferta_card_pri
                         valor = full_text[len(titulo):].strip()
                         if not valor:
                             print(f"DEBUG: Valor para '{titulo}' parece vazio ou não encontrado diretamente após o título na div pai.")
-
                 if titulo and valor:
                     caracteristicas[titulo] = valor
                 elif titulo and not valor:
@@ -170,15 +158,11 @@ def extrair_detalhes_na_nova_aba(card_index=None, page_num=None, oferta_card_pri
                             caracteristicas[titulo] = "N/A"
                     else:
                         caracteristicas[titulo] = "N/A"
-
         except Exception as e:
             print(f"⚠️ Erro ao extrair característica de div pai: {e}")
 
-    # --- NOVO: Extrair Valor FIPE (com WebDriverWait) ---
     valor_fipe = "Não Disponível"
     try:
-        # Espera o h6 que contém o valor da FIPE estar visível
-        # Seleciona o h6 que é descendente de uma div com as classes específicas
         fipe_value_element = wait.until(EC.visibility_of_element_located((By.CSS_SELECTOR, 'div.col-md.col-xs-12 h6')))
         valor_fipe = fipe_value_element.text.strip()
         print(f"💲 Valor FIPE encontrado: {valor_fipe}")
@@ -186,24 +170,31 @@ def extrair_detalhes_na_nova_aba(card_index=None, page_num=None, oferta_card_pri
         print(f"⚠️ Não foi possível extrair o Valor FIPE: {e}")
     caracteristicas["Valor FIPE"] = valor_fipe
 
-    # Monta dicionário para salvar no Excel
+    oferta_detalhada_valor = "Não Disponível"
+    try:
+        preco_element = wait.until(EC.visibility_of_element_located((By.CSS_SELECTOR, "div.oferta-atual")))
+        oferta_detalhada_valor = preco_element.text.strip()
+        print(f"💲 Oferta Detalhada encontrada: {oferta_detalhada_valor}")
+    except Exception as e:
+        print(f"⚠️ Não foi possível extrair a Oferta Detalhada: {e}")
+
     veiculo_info = {
         "Página": page_num,
         "Card": card_index,
+        "URL": current_url, # A URL da página de detalhes foi adicionada aqui
         "Título": titulo_veiculo,
         "Descrição": descricao_texto,
-        "Oferta Atual": oferta_card_principal, # Adicionado o valor da listagem principal aqui
+        "Oferta Atual": oferta_card_principal,
+        "Oferta Detalhada": oferta_detalhada_valor,
+        "Empresa Localização": empresa_localizacao,
+        "Endereço Completo": endereco_completo,
         **caracteristicas
     }
-    veiculos.append(veiculo_info)
-
+    
     # --- Extrair imagens APENAS do carrossel principal ---
     try:
         carrossel_principal = wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "div.col-12.carrossel-principal")))
         imagens_divs = carrossel_principal.find_elements(By.CSS_SELECTOR, "div.q-img__image.absolute-full")
-
-        print(f"📸 {len(imagens_divs)} imagens encontradas NO CARROSSEL PRINCIPAL. Extraindo URLs...")
-
         urls = []
         for div in imagens_divs:
             style_attr = div.get_attribute("style")
@@ -211,8 +202,6 @@ def extrair_detalhes_na_nova_aba(card_index=None, page_num=None, oferta_card_pri
                 match = re.search(r'url\("?(.*?)"?\)', style_attr)
                 if match:
                     urls.append(match.group(1))
-
-        print(f"➡️ Total de imagens extraídas: {len(urls)}")
 
         for i, url in enumerate(urls, 1):
             try:
@@ -222,9 +211,6 @@ def extrair_detalhes_na_nova_aba(card_index=None, page_num=None, oferta_card_pri
                     caminho = os.path.join(pasta, nome_arquivo)
                     with open(caminho, 'wb') as f:
                         f.write(resposta.content)
-                    print(f"✔️ Imagem salva: {nome_arquivo}")
-                else:
-                    print(f"⚠️ Falha ao baixar: {url} - Status {resposta.status_code}")
             except Exception as e:
                 print(f"⚠️ Erro ao baixar imagem {url}: {e}")
     except Exception as e:
@@ -243,27 +229,22 @@ def extrair_detalhes_na_nova_aba(card_index=None, page_num=None, oferta_card_pri
             if pdf_url:
                 pdf_nome_arquivo = f'{titulo_veiculo}_documento.pdf'
                 caminho_pdf = os.path.join(pasta, pdf_nome_arquivo)
-
-                print(f"⬇️ Baixando PDF: {pdf_url}")
                 resposta_pdf = requests.get(pdf_url, timeout=15)
                 if resposta_pdf.status_code == 200:
                     with open(caminho_pdf, 'wb') as f:
                         f.write(resposta_pdf.content)
-                    print(f"✔️ PDF salvo: {caminho_pdf}")
                     veiculo_info["PDF_Anexado"] = pdf_nome_arquivo
                 else:
-                    print(f"⚠️ Falha ao baixar PDF: {pdf_url} - Status {resposta_pdf.status_code}")
                     veiculo_info["PDF_Anexado"] = "Erro de Download"
             else:
                 veiculo_info["PDF_Anexado"] = "Link PDF Vazio"
         else:
-            print("ℹ️ Nenhum link de PDF encontrado nesta página.")
             veiculo_info["PDF_Anexado"] = "Não Disponível"
 
     except Exception as e:
         print(f"❌ Erro ao tentar baixar PDF: {e}")
         veiculo_info["PDF_Anexado"] = f"Erro: {str(e)}"
-
+    
     # Salvar Excel na pasta do veículo com todos os dados
     salvar_info_veiculo_excel(pasta, veiculo_info)
 
@@ -275,15 +256,13 @@ def processar_cards_por_link(page_num=1):
     wait.until(EC.presence_of_all_elements_located((By.CSS_SELECTOR, 'div.col-xs-12.col-lg-3.col-md-3.col-sm-6')))
     cards = driver.find_elements(By.CSS_SELECTOR, 'div.col-xs-12.col-lg-3.col-md-3.col-sm-6')
 
-    # Lista para armazenar hrefs e seus respectivos valores de destaque
     card_data = []
     for card in cards:
         try:
             link_element = card.find_element(By.CSS_SELECTOR, 'a')
             href = link_element.get_attribute('href')
 
-            # Tenta encontrar o valor-destaque dentro do card atual
-            oferta_card_principal = "N/A" # Valor padrão se não encontrar
+            oferta_card_principal = "N/A"
             try:
                 valor_destaque_element = card.find_element(By.CSS_SELECTOR, 'div.valor-destaque')
                 oferta_card_principal = valor_destaque_element.text.strip()
@@ -300,14 +279,13 @@ def processar_cards_por_link(page_num=1):
 
     for index, data in enumerate(card_data, 1):
         href = data["href"]
-        oferta_principal = data["oferta_principal"] # Valor extraído do card principal
+        oferta_principal = data["oferta_principal"]
         print(f"\n➡️ Abrindo card {index} de {len(card_data)} (Oferta Principal na Listagem: {oferta_principal})")
 
         driver.execute_script("window.open(arguments[0]);", href)
         driver.switch_to.window(driver.window_handles[1])
 
         try:
-            # Passando o valor_destaque para a função de extração de detalhes
             extrair_detalhes_na_nova_aba(card_index=index, page_num=page_num, oferta_card_principal=oferta_principal)
         except Exception as e:
             print(f"⚠️ Erro ao extrair dados do card {index}: {e}")
@@ -328,7 +306,6 @@ def ir_para_proxima_pagina(numero=None):
             texto = botao.text.strip()
             classes = botao.get_attribute('class')
             aria_label = botao.get_attribute('aria-label')
-            print(f"Botão {i}: texto='{texto}', aria-label='{aria_label}' | classes='{classes}'")
 
         if numero is None:
             for botao in botoes:
@@ -373,7 +350,6 @@ def processar_todas_paginas_e_cards():
             paginacao_pai = driver.find_element(By.CSS_SELECTOR, 'div.q-pagination__middle.row.justify-center')
             botoes = paginacao_pai.find_elements(By.TAG_NAME, "button")
 
-            # Verifica se há um botão com o número da próxima página ou um botão de "próximo"
             for botao in botoes:
                 if botao.text.strip() == str(page_num + 1) and 'disabled' not in botao.get_attribute('class'):
                     next_page_exists = True
@@ -389,7 +365,6 @@ def processar_todas_paginas_e_cards():
             print("✅ Última página alcançada. Fim do processo.")
             break
 
-        # Tenta ir para a próxima página usando o número. Se falhar, tenta o botão genérico.
         if not ir_para_proxima_pagina(numero=page_num + 1):
             print("✅ Última página alcançada ou botão de próxima página genérico não encontrado. Fim do processo.")
             break
@@ -400,5 +375,4 @@ if __name__ == '__main__':
     login()
     ofertas()
     processar_todas_paginas_e_cards()
-    salvar_info_veiculo_excel()
     driver.quit()
