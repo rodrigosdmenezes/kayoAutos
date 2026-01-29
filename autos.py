@@ -10,15 +10,15 @@ import time
 
 driver = webdriver.Chrome()
 driver.maximize_window()
-driver.get("xxxxxxxxxxxx")
-wait = WebDriverWait(driver, 20)
+driver.get("https://vendadireta.dealersclub.com.br/login")
+wait = WebDriverWait(driver, 10)
 
 veiculos = []
 
 def login():
     time.sleep(10)
-    driver.find_element(By.CSS_SELECTOR, 'input[aria-label="e-mail"]').send_keys('xxxxxxxxxx')
-    driver.find_element(By.CSS_SELECTOR, 'input[aria-label="senha"]').send_keys('xxxxxxxxxxxx')
+    driver.find_element(By.CSS_SELECTOR, 'input[aria-label="e-mail"]').send_keys('rafaelctba@sorepasse.com.br')
+    driver.find_element(By.CSS_SELECTOR, 'input[aria-label="senha"]').send_keys('Paloma01**')
     driver.find_element(By.XPATH, '//*[@id="q-app"]/div[1]/div/div/div[2]/div/div/div/div/div[1]/div/form/div[1]/div[2]/button').click()
 
 def ofertas():
@@ -74,10 +74,12 @@ def salvar_info_veiculo_excel(pasta, dados_veiculo, nome_arquivo='info_veiculo.x
         print(f"❌ Erro ao salvar Excel do veículo: {e}")
 
 def extrair_detalhes_na_nova_aba(card_index=None, page_num=None, oferta_card_principal="N/A"):
+    # Espera o elemento principal da página de detalhes carregar
+    wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "div.descricao-veiculo")))
+    
+    # Agora que a página carregou, podemos capturar a URL corretamente
     current_url = driver.current_url
     print(f"🔗 URL da página de detalhes: {current_url}")
-
-    wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "div.descricao-veiculo")))
 
     descricao_element = driver.find_element(By.CSS_SELECTOR, "div.descricao-veiculo")
     descricao_texto = descricao_element.text.strip()
@@ -91,7 +93,7 @@ def extrair_detalhes_na_nova_aba(card_index=None, page_num=None, oferta_card_pri
 
     caracteristicas = {}
     
-    # --- NOVO: Extrair localização ---
+    # --- Extração de localização e outras características (sem alterações) ---
     empresa_localizacao = "N/A"
     endereco_completo = "N/A"
     try:
@@ -112,7 +114,6 @@ def extrair_detalhes_na_nova_aba(card_index=None, page_num=None, oferta_card_pri
     except Exception as e:
         print(f"❌ Erro ao extrair localização do veículo: {e}")
 
-    # --- Extrair outras características ---
     caracteristicas_divs_pai = driver.find_elements(By.CSS_SELECTOR,
         "div.col-xs-4.col-md-3.col-sm-4.q-mb-md, div.col-xs-6.col-md-3.col-sm-6.aprovado, div.col-xs-6.col-md-3.col-sm-6.reprovado"
     )
@@ -170,28 +171,19 @@ def extrair_detalhes_na_nova_aba(card_index=None, page_num=None, oferta_card_pri
         print(f"⚠️ Não foi possível extrair o Valor FIPE: {e}")
     caracteristicas["Valor FIPE"] = valor_fipe
 
-    oferta_detalhada_valor = "Não Disponível"
-    try:
-        preco_element = wait.until(EC.visibility_of_element_located((By.CSS_SELECTOR, "div.oferta-atual")))
-        oferta_detalhada_valor = preco_element.text.strip()
-        print(f"💲 Oferta Detalhada encontrada: {oferta_detalhada_valor}")
-    except Exception as e:
-        print(f"⚠️ Não foi possível extrair a Oferta Detalhada: {e}")
-
     veiculo_info = {
         "Página": page_num,
         "Card": card_index,
-        "URL": current_url, # A URL da página de detalhes foi adicionada aqui
+        "URL": current_url,
         "Título": titulo_veiculo,
         "Descrição": descricao_texto,
         "Oferta Atual": oferta_card_principal,
-        "Oferta Detalhada": oferta_detalhada_valor,
         "Empresa Localização": empresa_localizacao,
         "Endereço Completo": endereco_completo,
         **caracteristicas
     }
     
-    # --- Extrair imagens APENAS do carrossel principal ---
+    # --- Restante da função para download de arquivos (sem alterações) ---
     try:
         carrossel_principal = wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "div.col-12.carrossel-principal")))
         imagens_divs = carrossel_principal.find_elements(By.CSS_SELECTOR, "div.q-img__image.absolute-full")
@@ -216,7 +208,6 @@ def extrair_detalhes_na_nova_aba(card_index=None, page_num=None, oferta_card_pri
     except Exception as e:
         print(f"❌ Não foi possível encontrar o carrossel principal ou extrair imagens: {e}")
 
-    # --- Baixar arquivo PDF, se disponível ---
     try:
         pdf_link_element = None
         try:
@@ -245,12 +236,9 @@ def extrair_detalhes_na_nova_aba(card_index=None, page_num=None, oferta_card_pri
         print(f"❌ Erro ao tentar baixar PDF: {e}")
         veiculo_info["PDF_Anexado"] = f"Erro: {str(e)}"
     
-    # Salvar Excel na pasta do veículo com todos os dados
     salvar_info_veiculo_excel(pasta, veiculo_info)
-
     time.sleep(2)
-
-
+    
 def processar_cards_por_link(page_num=1):
     time.sleep(5)
     wait.until(EC.presence_of_all_elements_located((By.CSS_SELECTOR, 'div.col-xs-12.col-lg-3.col-md-3.col-sm-6')))
