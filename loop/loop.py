@@ -1,27 +1,29 @@
 import re
 import base64
 import os
+from shlex import quote
 import time
 import requests
 import pandas as pd
 from datetime import datetime
 from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait as wait
+from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver.common.keys import Keys
 from selenium import webdriver
-from PIL import Image
-import img2pdf
+from selenium.common.exceptions import TimeoutException, NoSuchElementException
+from yt_dlp import YoutubeDL
 
 driver = webdriver.Firefox()
 driver.maximize_window()
 driver.get("https://looprevenda.com.br/login")
 
+
 def login():
-    wait(driver, 30)
-    driver.find_element(By.CSS_SELECTOR, 'input[name="email"]').send_keys('rafaelctba@sorepasse.com.br')
-    driver.find_element(By.CSS_SELECTOR, 'input[name="password"]').send_keys('(Paloma01)')
+    time.sleep(10)
+    driver.find_element(By.CSS_SELECTOR, 'input[name="email"]').send_keys('xxxxx')
+    driver.find_element(By.CSS_SELECTOR, 'input[name="password"]').send_keys('(xxxxxx)')
     driver.find_element(By.CSS_SELECTOR, 'button[type="submit"]').click()
 
 def buscarOfertas():
@@ -111,7 +113,7 @@ def texto(driver, by, selector):
         return ""
 
 def baixar_fotos(driver, fotos):
-    wait_local = wait(driver, 5)
+    wait_local = WebDriverWait(driver, 5)
 
     # 1️⃣ Clicar no botão que expande a galeria
     try:
@@ -185,92 +187,87 @@ def baixar_fotos(driver, fotos):
     except:
         pass
 
-
-
-def salvar_laudo_full_scroll(driver, pasta_veiculo):
-
-    wait_local = wait(driver, 15)
-
-    # 1️⃣ Verifica se existe laudo
+def salvar_laudo_full_scroll(driver):
+    """
+    Verifica se o card de laudo existe e extrai o parecer técnico.
+    Retorna o texto do parecer ou 'SEM LAUDO'.
+    """
     try:
-        laudo_container = driver.find_element(By.ID, "laudoCautelar")
-    except:
-        print("ℹ️ Veículo sem laudo")
-        return "Sem laudo"
-
-    # 2️⃣ Status
-    try:
-        status = laudo_container.find_element(
-            By.CSS_SELECTOR, 'p.MuiBox-root.mui-kvhvpv'
-        ).text.strip()
-    except:
-        status = "Status não identificado"
-
-    print(f"📄 Status do laudo: {status}")
-
-    # 3️⃣ Abre o laudo
-    botao = laudo_container.find_element(
-        By.CSS_SELECTOR,
-        'button.MuiButtonBase-root.MuiButton-root.MuiButton-contained.mui-lp094s'
-    )
-
-    driver.execute_script("arguments[0].click();", botao)
-    time.sleep(5)
-
-    # 4️⃣ Localiza o container REAL que rola
-    viewer = wait_local.until(
-        EC.presence_of_element_located(
-            (By.CSS_SELECTOR, 'div#viewerContainer')
-        )
-    )
-
-    imagens = []
-    altura_total = driver.execute_script(
-        "return arguments[0].scrollHeight", viewer
-    )
-
-    viewport = driver.execute_script(
-        "return arguments[0].clientHeight", viewer
-    )
-
-    scroll = 0
-    index = 1
-
-    while scroll < altura_total:
-        driver.execute_script(
-            "arguments[0].scrollTop = arguments[1]",
-            viewer,
-            scroll
+        # 1️⃣ Espera o Card de Laudo aparecer
+        wait_local = WebDriverWait(driver, 5)
+        seletor_card = 'div[id="laudoCautelar"]'
+        
+        card_laudo = wait_local.until(
+            EC.presence_of_element_located((By.CSS_SELECTOR, seletor_card))
         )
 
-        time.sleep(1.2)
+        # 2️⃣ Tenta capturar o texto de um dos dois seletores possíveis
+        # O seletor abaixo busca o primeiro OU o segundo (separados por vírgula)
+        try:
+            seletores_texto = 'p.mui-e9ps85, p.mui-kvhvpv'
+            elemento_texto = card_laudo.find_element(By.CSS_SELECTOR, seletores_texto)
+            parecer_texto = elemento_texto.text.strip()
+            
+            print(f"✅ Parecer técnico encontrado: {parecer_texto}")
+            return parecer_texto if parecer_texto else "LAUDO DISPONÍVEL"
+            
+        except Exception:
+            # Se o card existir mas o parágrafo de texto ainda não estiver lá
+            return "LAUDO DISPONÍVEL"
 
-        img_path = os.path.join(pasta_veiculo, f"laudo_{index}.png")
-        driver.save_screenshot(img_path)
-        imagens.append(img_path)
+    except (TimeoutException, NoSuchElementException):
+        print("ℹ️ Veículo sem laudo.")
+        return "SEM LAUDO"
+    except Exception as e:
+        print(f"⚠️ Erro ao verificar laudo: {e}")
+        return "ERRO VERIFICAÇÃO"
+    
+def baixar_video_youtube(driver, pasta):
+    url = None
+    wait_rapido = WebDriverWait(driver, 2)
+    
+    try:
+        seletor_video = 'iframe[src*="youtube"], iframe[src*="youtu.be"]'
+        elemento = wait_rapido.until(EC.presence_of_element_located((By.CSS_SELECTOR, seletor_video)))
+        
+        if elemento.tag_name == 'iframe':
+            url = elemento.get_attribute("src")
+        else:
+            url = elemento.get_attribute("href")
+            
+    except TimeoutException:
+        print("🎥 Veículo sem vídeo")
+        return "SEM VÍDEO"
+    except Exception as e:
+        print(f"⚠️ Erro ao localizar elemento de vídeo: {e}")
+        return "SEM VÍDEO"
 
-        scroll += viewport
-        index += 1
+    if not url:
+        return "SEM VÍDEO"
 
-    # 5️⃣ Converte em PDF
-    pdf_path = os.path.join(pasta_veiculo, "laudo.pdf")
+    if "embed/" in url:
+        video_id = url.split("embed/")[-1].split("?")[0]
+        url = f"https://www.youtube.com/watch?v={video_id}"
 
-    with open(pdf_path, "wb") as f:
-        f.write(img2pdf.convert(imagens))
+    print(f"🎬 Vídeo encontrado: {url}. Iniciando download...")
 
-    # 6️⃣ Limpa PNGs
-    for img in imagens:
-        os.remove(img)
+    os.makedirs(pasta, exist_ok=True)
+    ydl_opts = {
+        'outtmpl': os.path.join(pasta, 'video_veiculo.mp4'),
+        'format': 'best[ext=mp4]',
+        'quiet': True,
+        'no_warnings': True,
+        'noprogress': True
+    }
 
-    print("✅ Laudo FULL PAGE salvo corretamente")
-
-    # 7️⃣ Fecha visualização
-    driver.find_element(By.TAG_NAME, "body").send_keys(Keys.ESCAPE)
-    time.sleep(1)
-
-    return status
-
-
+    try:
+        with YoutubeDL(ydl_opts) as ydl:
+            ydl.download([url])
+        print("✅ Vídeo salvo com sucesso")
+        return "VÍDEO SALVO"
+    except Exception as e:
+        print(f"❌ Erro no yt-dlp ao baixar: {e}")
+        return "ERRO NO DOWNLOAD"
 
 def extrair_dados_veiculo():
     dados = {}
@@ -297,12 +294,6 @@ def extrair_dados_veiculo():
     except:
         dados["FIPE"] = ""
 
-    blocos = driver.find_elements(By.CSS_SELECTOR, 'div.mui-hix1c1')
-    campos = ["Opcionais", "Itens de Vistoria", "Observações Técnicas", "Observações"]
-
-    for campo, bloco in zip(campos, blocos):
-        dados[campo] = bloco.text
-
     return dados
 
 def salvar_excel(dados, pasta):
@@ -312,7 +303,7 @@ def salvar_excel(dados, pasta):
     print(f"📊 Excel salvo em: {caminho}")
     
 def processar_ofertas():
-    time.sleep(3)  # garante DOM estável
+    time.sleep(3)
 
     cards = driver.find_elements(By.CSS_SELECTOR, 'div.VehicleCard-details')
 
@@ -325,7 +316,6 @@ def processar_ofertas():
     aba_principal = driver.current_window_handle
 
     for i in range(len(cards)):
-        # SEMPRE rebuscar (evita StaleElement)
         cards = driver.find_elements(By.CSS_SELECTOR, 'div.VehicleCard-details')
 
         if i >= len(cards):
@@ -342,8 +332,7 @@ def processar_ofertas():
 
         driver.execute_script("arguments[0].click();", card)
 
-        # aguarda nova aba
-        wait(driver, 10).until(
+        WebDriverWait(driver, 10).until(
             lambda d: len(d.window_handles) > 1
         )
 
@@ -359,7 +348,7 @@ def processar_ofertas():
         )
 
         baixar_fotos(driver, fotos)
-        dados["Status Laudo"] = salvar_laudo_full_scroll(driver, pasta)
+        dados["Status Laudo"] = salvar_laudo_full_scroll(driver)
         salvar_excel(dados, pasta)
 
         driver.close()
